@@ -1,22 +1,28 @@
 package org.sid.walletservice.web;
 
+import org.keycloak.adapters.springsecurity.token.KeycloakAuthenticationToken;
+import org.keycloak.representations.AccessToken;
 import org.sid.walletservice.entities.*;
 import org.sid.walletservice.repositories.*;
 import org.sid.walletservice.services.WalletServiceImpl;
 import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.graphql.data.method.annotation.QueryMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
+
+import java.security.Principal;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 @Controller
 public class CurrencyGraphQLController {
-  private CurrencyRepository currencyRepository;
-  private CountryRepository countryRepository;
-  private ContinentRepository continentRepository;
-  private WalletServiceImpl walletService;
-  private WalletRepository walletRepository;
-  private WalletTransactionRepository walletTransactionRepository;
+    private CurrencyRepository currencyRepository;
+    private CountryRepository countryRepository;
+    private ContinentRepository continentRepository;
+    private WalletServiceImpl walletService;
+    private WalletRepository walletRepository;
+    private WalletTransactionRepository walletTransactionRepository;
 
 
     public CurrencyGraphQLController(CurrencyRepository currencyRepository, CountryRepository countryRepository, ContinentRepository continentRepository, WalletServiceImpl walletService, WalletRepository walletRepository, WalletTransactionRepository walletTransactionRepository) {
@@ -68,22 +74,42 @@ public class CurrencyGraphQLController {
         return currencyRepository.save(currency);
     }
     @MutationMapping
-    public Wallet addWallet(@Argument String currencyCode, @Argument double initialBalance){
-        return walletService.newWallet(currencyCode,initialBalance,"user1");
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public Wallet addWallet(@Argument String currencyCode, @Argument double initialBalance,
+                            Principal principal){
+        KeycloakAuthenticationToken authenticationToken= (KeycloakAuthenticationToken) principal;
+        AccessToken token = authenticationToken.getAccount().getKeycloakSecurityContext().getToken();
+        String username = token.getPreferredUsername();
+        return walletService.newWallet(currencyCode,initialBalance,username);
     }
     @MutationMapping
+    @PreAuthorize("hasAuthority('ADMIN')")
     public List<Wallet> walletTransfer(@Argument String sourceWalletId,@Argument String destinationWalletId, @Argument double amount) throws Exception {
-         return walletService.walletTransfer(sourceWalletId,destinationWalletId, amount);
+        return walletService.walletTransfer(sourceWalletId,destinationWalletId, amount);
     }
     @QueryMapping
-    public List<Wallet> userWallets(){
-        return walletRepository.findByUserId("user1");
+    @PreAuthorize("hasAuthority('USER')")
+    public List<Wallet> userWallets(Principal principal){
+        KeycloakAuthenticationToken authenticationToken= (KeycloakAuthenticationToken) principal;
+        AccessToken token = authenticationToken.getAccount().getKeycloakSecurityContext().getToken();
+        String username = token.getPreferredUsername();
+        return walletRepository.findByUserId(username);
     }
+//    @QueryMapping
+//    @PreAuthorize("hasAuthority('USER')")
+//    public Wallet walletById(@Argument String id){
+//        return walletRepository.findById(id).orElseThrow();
+//    }
+
     @QueryMapping
-    public Wallet walletById(@Argument String id){
-        return walletRepository.findById(id).orElseThrow();
+    @PreAuthorize("hasAuthority('USER')")
+    public Wallet walletById(@Argument String id) {
+        return walletRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Wallet not found with id: " + id));
     }
+
     @QueryMapping
+    @PreAuthorize("hasAuthority('USER')")
     public List<WalletTransaction> walletTransactions(@Argument String walletId){
         return walletTransactionRepository.findByWalletId(walletId);
     }
